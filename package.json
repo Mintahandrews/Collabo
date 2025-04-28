@@ -2,17 +2,18 @@
   "name": "collabo-by-codemintah-web",
   "private": true,
   "scripts": {
-    "dev": "nodemon server/index.ts",
-    "dev:client": "ts-node server/index.ts",
+    "dev": "nodemon -r dotenv/config server/index.ts",
+    "dev:client": "ts-node -r dotenv/config server/index.ts",
     "build:server": "tsc --project tsconfig.server.json",
     "build:next": "next build",
     "build": "npm-run-all build:*",
-    "start": "NODE_ENV=production node build/index.js",
+    "start": "NODE_ENV=production node -r dotenv/config build/index.js",
     "lint": "next lint"
   },
   "dependencies": {
     "@types/lodash": "^4.14.191",
     "@types/socket.io-client": "^1.4.36",
+    "dotenv": "^16.5.0",
     "express": "^4.17.3",
     "framer-motion": "^6.3.3",
     "lodash": "^4.17.21",

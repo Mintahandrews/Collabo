@@ -15,11 +15,39 @@ const dev = process.env.NODE_ENV !== "production";
 const nextApp = next({ dev });
 const nextHandler: NextApiHandler = nextApp.getRequestHandler();
 
-nextApp.prepare().then(async () => {
-  const app = express();
-  const server = createServer(app);
+// Store rooms in memory (note: this will be cleared on serverless cold starts)
+const rooms = new Map<string, Room>();
 
-  const io = new Server<ClientToServerEvents, ServerToClientEvents>(server);
+const addMove = (roomId: string, socketId: string, move: Move) => {
+  const room = rooms.get(roomId)!;
+  if (!room.users.has(socketId)) {
+    room.usersMoves.set(socketId, [move]);
+  }
+  room.usersMoves.get(socketId)!.push(move);
+};
+
+const undoMove = (roomId: string, socketId: string) => {
+  const room = rooms.get(roomId)!;
+  room.usersMoves.get(socketId)!.pop();
+};
+
+const createSocketServer = (server: any) => {
+  const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
+    cors: {
+      origin:
+        process.env.NODE_ENV === "production"
+          ? process.env.NEXT_PUBLIC_APP_URL
+          : "http://localhost:3000",
+      methods: ["GET", "POST"],
+      credentials: true,
+    },
+    transports: ["websocket", "polling"],
+    path: "/socket.io",
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    connectTimeout: 45000,
+    allowEIO3: true,
+  });
 
   // WebRTC signaling events
   io.on("connection", (socket) => {
@@ -55,36 +83,10 @@ nextApp.prepare().then(async () => {
         }
       });
     });
-  });
 
-  app.get("/health", async (_, res) => {
-    res.send("Healthy");
-  });
-
-  const rooms = new Map<string, Room>();
-
-  const addMove = (roomId: string, socketId: string, move: Move) => {
-    const room = rooms.get(roomId)!;
-
-    if (!room.users.has(socketId)) {
-      room.usersMoves.set(socketId, [move]);
-    }
-
-    room.usersMoves.get(socketId)!.push(move);
-  };
-
-  const undoMove = (roomId: string, socketId: string) => {
-    const room = rooms.get(roomId)!;
-
-    room.usersMoves.get(socketId)!.pop();
-  };
-
-  io.on("connection", (socket) => {
     const getRoomId = () => {
       const joinedRoom = [...socket.rooms].find((room) => room !== socket.id);
-
       if (!joinedRoom) return socket.id;
-
       return joinedRoom;
     };
 
@@ -93,10 +95,8 @@ nextApp.prepare().then(async () => {
       if (!room) return;
 
       const userMoves = room.usersMoves.get(socketId);
-
       if (userMoves) room.drawn.push(...userMoves);
       room.users.delete(socketId);
-
       socket.leave(roomId);
     };
 
@@ -107,7 +107,6 @@ nextApp.prepare().then(async () => {
       } while (rooms.has(roomId));
 
       socket.join(roomId);
-
       rooms.set(roomId, {
         usersMoves: new Map([[socket.id, []]]),
         drawn: [],
@@ -201,10 +200,32 @@ nextApp.prepare().then(async () => {
     });
   });
 
-  app.all("*", (req: any, res: any) => nextHandler(req, res));
+  return io;
+};
 
-  server.listen(port, () => {
-    // eslint-disable-next-line no-console
-    console.log(`> Ready on http://localhost:${port}`);
+// For development server
+if (dev) {
+  nextApp.prepare().then(() => {
+    const app = express();
+    const server = createServer(app);
+
+    createSocketServer(server);
+
+    app.get("/health", (_, res) => res.send("Healthy"));
+    app.all("*", (req: any, res: any) => nextHandler(req, res));
+
+    server.listen(port, () => {
+      console.log(`> Ready on http://localhost:${port}`);
+    });
   });
-});
+}
+
+// For production serverless environment
+const app = express();
+const server = createServer(app);
+createSocketServer(server);
+
+app.get("/health", (_, res) => res.send("Healthy"));
+app.all("*", (req: any, res: any) => nextHandler(req, res));
+
+export default app;
