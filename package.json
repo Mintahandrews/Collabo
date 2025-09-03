@@ -6,14 +6,16 @@
     "dev:client": "ts-node -r dotenv/config server/index.ts",
     "build:server": "tsc --project tsconfig.server.json",
     "build:next": "next build",
-    "build": "npm-run-all build:*",
+    "build": "rm -rf build && npm-run-all build:*",
     "start": "NODE_ENV=production node -r dotenv/config build/index.js",
-    "start:render": "NODE_ENV=production node -r dotenv/config build/index.js",
+    "start:render": "cd /opt/render/project/src && NODE_ENV=production node -r dotenv/config build/index.js",
+    "start:debug": "NODE_ENV=production DEBUG=* node -r dotenv/config build/index.js",
     "lint": "next lint"
   },
   "dependencies": {
     "@types/lodash": "^4.14.191",
     "@types/socket.io-client": "^1.4.36",
+    "caniuse-lite": "^1.0.30001739",
     "dotenv": "^16.5.0",
     "express": "^4.17.3",
     "framer-motion": "^6.3.3",

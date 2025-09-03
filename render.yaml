@@ -5,7 +5,7 @@ services:
     env: node
     plan: starter # Choose appropriate plan based on your needs
     buildCommand: npm run build
-    startCommand: npm run start
+    startCommand: npm run start:render
     healthCheckPath: /health
     # Enable WebSockets
     websocket: true

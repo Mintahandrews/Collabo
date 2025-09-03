@@ -13,7 +13,16 @@ import { renderSocketConfig, healthCheckPath } from "./render-config";
 
 const port = parseInt(process.env.PORT || "3000", 10);
 const dev = process.env.NODE_ENV !== "production";
-const nextApp = next({ dev });
+
+console.log(`Starting Collabo server in ${dev ? "development" : "production"} mode on port ${port}`);
+console.log(`Using render config: ${JSON.stringify(renderSocketConfig)}`);
+
+// Use proper directory resolution for Next.js in production vs development
+// This ensures Next.js can find its assets when running from the build directory
+const nextApp = next({ 
+  dev,
+  dir: process.cwd() // Use current working directory as base
+});
 const nextHandler: NextApiHandler = nextApp.getRequestHandler();
 
 // Store rooms in memory (note: this will be cleared on serverless cold starts)
@@ -218,8 +227,9 @@ if (dev) {
     const { app, server } = await setupApp();
     
     server.listen(port, () => {
-      console.log(`> Development server ready on http://localhost:${port}`);
-      console.log(`> WebSocket server running on ws://localhost:${port}`);
+      console.log(`🚀 Server listening at http://localhost:${port} in ${process.env.NODE_ENV} mode`);
+      console.log(`Health check endpoint available at: ${healthCheckPath}`);
+      console.log(`WebSocket server running on ws://localhost:${port}`);
     });
   });
 } else {
@@ -240,13 +250,7 @@ const app = express();
 const server = createServer(app);
 createSocketServer(server);
 
-app.get(healthCheckPath, (_, res) => {
-  res.status(200).send({
-    status: "Healthy",
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV
-  });
-});
+// Health check endpoint is already defined above
 app.all("*", (req: any, res: any) => nextHandler(req, res));
 
 export default app;
