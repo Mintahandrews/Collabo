@@ -20,6 +20,12 @@ services:
         sync: false # User needs to set this manually in Render dashboard
       - key: NEXT_PUBLIC_SOCKET_URL
         sync: false # User needs to set this manually in Render dashboard
+      - key: TWILIO_ACCOUNT_SID
+        sync: false # Required for Twilio TURN
+      - key: TWILIO_AUTH_TOKEN
+        sync: false # Required for Twilio TURN
+      - key: TWILIO_TTL_SECONDS
+        sync: false # Optional; default 3600
 
 # This file is for Render's Infrastructure as Code (render.yaml)
 # See https://render.com/docs/infrastructure-as-code for more info

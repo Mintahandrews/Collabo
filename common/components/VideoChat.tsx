@@ -238,6 +238,47 @@ const VideoChat = ({ userId, onClose, open }: VideoChatProps) => {
     }
   }, []);
 
+  const handleIceServersUpdated = useCallback((event: Event) => {
+    const customEvent = event as CustomEvent;
+    const count = customEvent.detail?.count as number | undefined;
+    const expiresAt = customEvent.detail?.expiresAt as number | undefined;
+    const minsLeft = expiresAt
+      ? Math.max(0, Math.round((expiresAt - Date.now()) / 60000))
+      : undefined;
+    toast.info(
+      `TURN servers updated${
+        typeof count === "number" ? ` (${count})` : ""
+      }${typeof minsLeft === "number" ? ` · ~${minsLeft}m TTL` : ""}`
+    );
+  }, []);
+
+  const handleSignalingDisconnected = useCallback((event: Event) => {
+    const customEvent = event as CustomEvent;
+    const message =
+      customEvent.detail?.message || "Signaling disconnected. Reconnecting...";
+    toast.warn(message);
+    setIsReconnecting(true);
+    setConnectionStatus("Signaling disconnected, attempting reconnection...");
+  }, []);
+
+  const handleConnectionQualityIssue = useCallback(
+    (event: Event) => {
+      const customEvent = event as CustomEvent;
+      if (customEvent.detail?.userId === userId) {
+        const { packetLoss, highLatency } = customEvent.detail || {};
+        const labels = [
+          packetLoss ? "packet loss" : null,
+          highLatency ? "high latency" : null,
+        ].filter(Boolean);
+        const suffix = labels.length ? ` (${labels.join(", ")})` : "";
+        toast.warn(
+          `${customEvent.detail?.message || "Connection quality issue"}${suffix}`
+        );
+      }
+    },
+    [userId]
+  );
+
   const startCall = useCallback(async () => {
     if (!webRTCServiceRef.current || !userId) return;
 
@@ -310,6 +351,18 @@ const VideoChat = ({ userId, onClose, open }: VideoChatProps) => {
       "peer-connection-timeout",
       handleConnectionTimeout as EventListener
     );
+    window.addEventListener(
+      "webrtc-ice-servers-updated",
+      handleIceServersUpdated as EventListener
+    );
+    window.addEventListener(
+      "webrtc-signaling-disconnected",
+      handleSignalingDisconnected as EventListener
+    );
+    window.addEventListener(
+      "webrtc-connection-quality-issue",
+      handleConnectionQualityIssue as EventListener
+    );
 
     return () => {
       window.removeEventListener(
@@ -333,6 +386,18 @@ const VideoChat = ({ userId, onClose, open }: VideoChatProps) => {
         "peer-connection-timeout",
         handleConnectionTimeout as EventListener
       );
+      window.removeEventListener(
+        "webrtc-ice-servers-updated",
+        handleIceServersUpdated as EventListener
+      );
+      window.removeEventListener(
+        "webrtc-signaling-disconnected",
+        handleSignalingDisconnected as EventListener
+      );
+      window.removeEventListener(
+        "webrtc-connection-quality-issue",
+        handleConnectionQualityIssue as EventListener
+      );
     };
   }, [
     handleRemoteStreamUpdated,
@@ -341,6 +406,9 @@ const VideoChat = ({ userId, onClose, open }: VideoChatProps) => {
     handleConnectionStateChange,
     handleWebRTCError,
     handleConnectionTimeout,
+    handleIceServersUpdated,
+    handleSignalingDisconnected,
+    handleConnectionQualityIssue,
   ]);
 
   const toggleMinimize = () => {

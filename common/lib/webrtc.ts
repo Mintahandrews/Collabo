@@ -25,36 +25,14 @@ class WebRTCService {
       { urls: "stun:stun4.l.google.com:19302" },
       { urls: "stun:stun.stunprotocol.org:3478" },
       { urls: "stun:stun.voip.blackberry.com:3478" },
-      // Using free Twilio TURN servers as they are more reliable
-      {
-        urls: [
-          "turn:global.turn.twilio.com:3478?transport=udp",
-          "turn:global.turn.twilio.com:3478?transport=tcp",
-          "turn:global.turn.twilio.com:443?transport=tcp",
-        ],
-        username:
-          "f4b4035eaa76f4a55de5f4351567653ee4ff6fa97b50b6b334fcc1be9c27212d",
-        credential: "myL7H4oVB1bVY01+IwRMVQNPAQ0Cca2vrZe6YGmNWQU=",
-      },
-      // Keep metered TURN servers as backup
-      {
-        urls: "turn:relay.metered.ca:80",
-        username: "83e9c6e53a6b355601d8bf78",
-        credential: "SJgHvzXnhh5iNXhc",
-      },
-      {
-        urls: "turn:relay.metered.ca:443",
-        username: "83e9c6e53a6b355601d8bf78",
-        credential: "SJgHvzXnhh5iNXhc",
-      },
-      {
-        urls: "turn:relay.metered.ca:443?transport=tcp",
-        username: "83e9c6e53a6b355601d8bf78",
-        credential: "SJgHvzXnhh5iNXhc",
-      },
     ],
     iceCandidatePoolSize: 10,
   };
+  
+  // Dynamically fetched TURN servers (ephemeral)
+  private dynamicIceServers: RTCIceServer[] | null = null;
+  private iceServersExpiryAt: number | null = null; // epoch ms
+  private iceFetchPromise: Promise<void> | null = null;
   private reconnectAttempts: Map<string, number> = new Map();
   private maxReconnectAttempts = 5;
   private connectionTimeoutDuration = 45000;
@@ -337,7 +315,12 @@ class WebRTCService {
     this.removePeerConnection(userId);
 
     console.log(`Creating new peer connection for ${userId}`);
-    const connection = new RTCPeerConnection(this.connectionConfig);
+    await this.ensureIceServers();
+    const effectiveConfig: RTCConfiguration = {
+      iceServers: this.getEffectiveIceServers(),
+      iceCandidatePoolSize: this.connectionConfig.iceCandidatePoolSize,
+    };
+    const connection = new RTCPeerConnection(effectiveConfig);
     let stream: MediaStream;
 
     try {
@@ -481,6 +464,14 @@ class WebRTCService {
     if (peerConnection) {
       try {
         console.log(`Restarting ICE for ${userId}`);
+        await this.ensureIceServers();
+        const effectiveServers = this.getEffectiveIceServers();
+        try {
+          peerConnection.connection.setConfiguration({ iceServers: effectiveServers });
+          console.log(`Updated ICE servers before restart (count=${effectiveServers.length})`);
+        } catch (cfgErr) {
+          console.warn("Failed to update ICE servers via setConfiguration", cfgErr);
+        }
         // Create new offer with ICE restart flag
         const offer = await peerConnection.connection.createOffer({
           iceRestart: true,
@@ -498,6 +489,82 @@ class WebRTCService {
       console.warn(
         `Cannot restart ICE: No peer connection found for ${userId}`
       );
+    }
+  }
+ 
+  // --- Ephemeral TURN support ---
+  private async ensureIceServers(): Promise<void> {
+    const now = Date.now();
+    if (
+      this.dynamicIceServers &&
+      this.iceServersExpiryAt &&
+      now < this.iceServersExpiryAt - 60_000 // refresh 60s early
+    ) {
+      return;
+    }
+
+    if (this.iceFetchPromise) {
+      try {
+        await this.iceFetchPromise;
+      } catch (_) {
+        // ignore; fall back to STUN-only
+      }
+      return;
+    }
+
+    this.iceFetchPromise = this.fetchEphemeralIceServers();
+    try {
+      await this.iceFetchPromise;
+    } finally {
+      this.iceFetchPromise = null;
+    }
+  }
+
+  private getEffectiveIceServers(): RTCIceServer[] {
+    return [
+      ...this.connectionConfig.iceServers,
+      ...(this.dynamicIceServers || []),
+    ];
+  }
+
+  private async fetchEphemeralIceServers(): Promise<void> {
+    try {
+      const res = await fetch("/api/turn-credentials", { method: "GET" });
+      if (!res.ok) {
+        console.warn("Failed to fetch TURN credentials:", res.status);
+        return;
+      }
+      const data: any = await res.json();
+      const iceServersRaw = (data.iceServers || data.ice_servers || []) as any[];
+      const normalized: RTCIceServer[] = iceServersRaw.map((srv) => {
+        const urls = srv.urls as string | string[];
+        const entry: RTCIceServer = { urls } as RTCIceServer;
+        if (srv.username) entry.username = srv.username;
+        if (srv.credential) entry.credential = srv.credential;
+        return entry;
+      });
+
+      if (normalized.length > 0) {
+        this.dynamicIceServers = normalized;
+        const ttlStr = data.ttl ?? "3600";
+        const ttl = parseInt(String(ttlStr), 10);
+        const ttlMs = Number.isFinite(ttl) && ttl > 0 ? ttl * 1000 : 3600 * 1000;
+        this.iceServersExpiryAt = Date.now() + ttlMs;
+
+        try {
+          window.dispatchEvent(
+            new CustomEvent("webrtc-ice-servers-updated", {
+              detail: { count: normalized.length, expiresAt: this.iceServersExpiryAt },
+            })
+          );
+        } catch (_) {
+          // no-op if window not available
+        }
+        console.log(`Fetched ${normalized.length} TURN servers (ttl=${isNaN(ttl) ? "?" : ttl}s)`);
+      }
+    } catch (err) {
+      console.warn("Error fetching TURN credentials", err);
+      // keep STUN-only
     }
   }
 

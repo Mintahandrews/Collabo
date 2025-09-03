@@ -88,6 +88,9 @@ Collabo can be easily deployed to [Render](https://render.com) with WebSocket su
    - `NEXT_PUBLIC_APP_URL`: Your Render service URL (e.g., https://collabo-web.onrender.com)
    - `NEXT_PUBLIC_SOCKET_URL`: Same as your app URL (e.g., https://collabo-web.onrender.com)
    - `NEXT_PUBLIC_FORCE_POLLING`: optional, set to `1` to force polling-only on clients (useful if websocket upgrades are flaky)
+   - `TWILIO_ACCOUNT_SID`: Your Twilio Account SID (required for TURN)
+   - `TWILIO_AUTH_TOKEN`: Your Twilio Auth Token (required for TURN)
+   - `TWILIO_TTL_SECONDS`: optional TTL for ephemeral TURN credentials (default 3600)
 
 5. **Enable WebSockets**
    - In your service settings, scroll down to "WebSockets"
@@ -121,6 +124,9 @@ For subsequent deployments, Render will automatically redeploy when you push cha
    - `NEXT_PUBLIC_APP_URL=https://<your-service>.onrender.com`
    - `NEXT_PUBLIC_SOCKET_URL=https://<your-service>.onrender.com`
    - `NEXT_PUBLIC_FORCE_POLLING=1` (optional; temporarily force polling-only to stabilize connections)
+   - `TWILIO_ACCOUNT_SID=AC...` (required for TURN)
+   - `TWILIO_AUTH_TOKEN=...` (required for TURN)
+   - `TWILIO_TTL_SECONDS=3600` (optional)
 
 2. Commands (Service Settings):
    - Build: `chmod +x ./render-build.sh && ./render-build.sh`
@@ -138,6 +144,57 @@ For subsequent deployments, Render will automatically redeploy when you push cha
    - Ensure the service is using the custom build script and `start:render`
    - Check logs for socket diagnostics (transport, upgrades, disconnect reasons)
    - Retry with client transports forced to polling to isolate upgrade issues (set `NEXT_PUBLIC_FORCE_POLLING=1`)
+
+## 🔐 WebRTC TURN (Twilio) Setup & Testing
+
+To improve connectivity behind restrictive NATs/firewalls, the app fetches ephemeral TURN credentials from Twilio on demand via `/api/turn-credentials`.
+
+### Configure Environment
+
+- Set the following in your environment or Render dashboard:
+  - `TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
+  - `TWILIO_AUTH_TOKEN=your_twilio_auth_token`
+  - `TWILIO_TTL_SECONDS=3600` (optional)
+
+### Local Testing
+
+1. Create a `.env` file based on `.env.example` and add the Twilio variables.
+2. Start the app:
+
+```bash
+npm run dev
+```
+
+3. In your browser, request the endpoint:
+
+```
+http://localhost:3000/api/turn-credentials
+```
+
+Expected JSON on success:
+
+```json
+{
+  "iceServers": [
+    { "urls": ["stun:global.stun.twilio.com:3478?transport=udp"] },
+    { "urls": "turn:global.turn.twilio.com:3478?transport=udp", "username": "...", "credential": "..." }
+  ],
+  "ttl": 3600
+}
+```
+
+### Client Behavior
+
+- The client keeps baseline STUN servers and dynamically appends fetched TURN servers.
+- Credentials are cached until shortly before expiry and refreshed automatically.
+- On refresh, we dispatch a DOM event `webrtc-ice-servers-updated` with `{ count, expiresAt }`.
+- If fetching fails, the app falls back to STUN-only servers.
+
+Check DevTools console for messages like:
+
+```
+Fetched <N> TURN servers (ttl=3600s)
+```
 
 ## 🛠️ Technologies Used
 

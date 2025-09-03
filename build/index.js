@@ -35,8 +35,27 @@ const undoMove = (roomId, socketId) => {
 };
 const createSocketServer = (server) => {
     const io = new socket_io_1.Server(server, render_config_1.renderSocketConfig);
+    // Log engine.io handshake failures (useful on Render)
+    io.engine.on("connection_error", (err) => {
+        console.error(`[engine] connection_error code=${err.code} message=${err.message}`, err.context || {});
+    });
     // WebRTC signaling events
     io.on("connection", (socket) => {
+        var _a;
+        // Connection diagnostics
+        try {
+            const t = socket.conn.transport.name;
+            console.log(`[socket] connect id=${socket.id} transport=${t} ip=${socket.handshake.address} origin=${((_a = socket.handshake.headers) === null || _a === void 0 ? void 0 : _a.origin) || 'n/a'}`);
+            socket.conn.on("upgrade", (newTransport) => {
+                console.log(`[socket] upgrade id=${socket.id} transport=${newTransport.name}`);
+            });
+        }
+        catch (e) {
+            console.warn("[socket] unable to log transport details", e);
+        }
+        socket.on("error", (err) => {
+            console.error(`[socket] error id=${socket.id} transport=${socket.conn.transport.name}`, err);
+        });
         socket.on("webrtc_offer", (offer, targetId) => {
             if (!offer || !targetId)
                 return;
@@ -52,7 +71,8 @@ const createSocketServer = (server) => {
                 return;
             socket.to(targetId).emit("webrtc_ice_candidate", candidate, socket.id);
         });
-        socket.on("disconnect", () => {
+        socket.on("disconnect", (reason) => {
+            console.log(`[socket] disconnect id=${socket.id} reason=${reason}`);
             const rooms = [...socket.rooms];
             rooms.forEach((room) => {
                 if (room !== socket.id) {
@@ -155,6 +175,13 @@ const createSocketServer = (server) => {
 const setupApp = async () => {
     const app = (0, express_1.default)();
     const server = (0, http_1.createServer)(app);
+    // Tune Node HTTP server timeouts for proxies (Cloudflare/Render)
+    // Helps prevent sporadic 502s and premature connection closes on long polling / upgrades
+    server.keepAliveTimeout = 61000; // must be < headersTimeout
+    server.headersTimeout = 65000; // keep a small buffer above keepAliveTimeout
+    // Disable per-request timeouts to support long-lived polling requests
+    // (cast to any for older @types/node compatibility)
+    server.requestTimeout = 0;
     // Create socket server
     const io = createSocketServer(server);
     // Health check endpoint for Render
@@ -164,6 +191,49 @@ const setupApp = async () => {
             timestamp: new Date().toISOString(),
             uptime: process.uptime()
         });
+    });
+    // Ephemeral TURN credentials (Twilio Network Traversal Service)
+    app.get("/api/turn-credentials", async (_, res) => {
+        const accountSid = process.env.TWILIO_ACCOUNT_SID;
+        const authToken = process.env.TWILIO_AUTH_TOKEN;
+        if (!accountSid || !authToken) {
+            return res
+                .status(500)
+                .json({ error: "Twilio credentials not configured" });
+        }
+        try {
+            const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Tokens.json`;
+            const auth = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
+            const ttlSeconds = parseInt(process.env.TWILIO_TTL_SECONDS || "3600", 10);
+            const form = new URLSearchParams();
+            if (!Number.isNaN(ttlSeconds) && ttlSeconds > 0) {
+                // Twilio expects capitalized parameter names for form posts
+                form.set("Ttl", String(ttlSeconds));
+            }
+            const twilioRes = await fetch(url, {
+                method: "POST",
+                headers: {
+                    Authorization: `Basic ${auth}`,
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                body: form,
+            });
+            if (!twilioRes.ok) {
+                const text = await twilioRes.text();
+                console.error("[turn-credentials] Twilio error", twilioRes.status, text);
+                return res.status(502).json({ error: "Failed to fetch TURN credentials" });
+            }
+            const data = await twilioRes.json();
+            return res
+                .status(200)
+                .json({ iceServers: data.ice_servers, ttl: data.ttl });
+        }
+        catch (err) {
+            console.error("[turn-credentials] Failed", err);
+            return res
+                .status(500)
+                .json({ error: "Failed to fetch TURN credentials" });
+        }
     });
     // Handle all Next.js requests
     app.all("*", (req, res) => nextHandler(req, res));
@@ -195,6 +265,49 @@ else {
 const app = (0, express_1.default)();
 const server = (0, http_1.createServer)(app);
 createSocketServer(server);
-// Health check endpoint is already defined above
+// Health check endpoint
+app.get(render_config_1.healthCheckPath, (_, res) => {
+    res.status(200).send({
+        status: "Healthy",
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+    });
+});
+// Ephemeral TURN credentials (Twilio Network Traversal Service)
+app.get("/api/turn-credentials", async (_, res) => {
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    if (!accountSid || !authToken) {
+        return res.status(500).json({ error: "Twilio credentials not configured" });
+    }
+    try {
+        const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Tokens.json`;
+        const auth = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
+        const ttlSeconds = parseInt(process.env.TWILIO_TTL_SECONDS || "3600", 10);
+        const form = new URLSearchParams();
+        if (!Number.isNaN(ttlSeconds) && ttlSeconds > 0) {
+            form.set("Ttl", String(ttlSeconds));
+        }
+        const twilioRes = await fetch(url, {
+            method: "POST",
+            headers: {
+                Authorization: `Basic ${auth}`,
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: form,
+        });
+        if (!twilioRes.ok) {
+            const text = await twilioRes.text();
+            console.error("[turn-credentials] Twilio error", twilioRes.status, text);
+            return res.status(502).json({ error: "Failed to fetch TURN credentials" });
+        }
+        const data = await twilioRes.json();
+        return res.status(200).json({ iceServers: data.ice_servers, ttl: data.ttl });
+    }
+    catch (err) {
+        console.error("[turn-credentials] Failed", err);
+        return res.status(500).json({ error: "Failed to fetch TURN credentials" });
+    }
+});
 app.all("*", (req, res) => nextHandler(req, res));
 exports.default = app;
