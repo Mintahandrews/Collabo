@@ -6,6 +6,19 @@
 The main issue was with the import path for `render-config.js` which was causing the "Cannot find module './render-config'" error during deployment. This has been fixed by:
 - Changing the import path in `server/index.ts` from `"../server/render-config"` to `"./render-config"` to ensure correct module resolution after TypeScript compilation
 
+### 2. CSS Build Error
+Another issue was with the CSS build process failing due to a missing module in caniuse-lite:
+```
+Error: Cannot find module './features/cross-document-view-transitions'
+```
+
+This has been fixed by:
+- Downgrading caniuse-lite to a compatible version (`^1.0.30001568`) in package.json
+- Adding a browserslist database update step to the build process
+- Creating a `.browserslistrc` file to explicitly define supported browsers
+- Updating PostCSS configuration to avoid problematic features
+- Cleaning npm cache before build in render.yaml
+
 ### 2. Build and Start Scripts
 The following scripts were updated to ensure proper deployment:
 - Build script: Properly cleans and rebuilds all necessary files
