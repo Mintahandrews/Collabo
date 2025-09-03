@@ -8,10 +8,30 @@ const allowedOrigins = [
   'https://localhost:3000'
 ];
 
+// Allow typical Render domains and localhost; if NEXT_PUBLIC_APP_URL is unset or mismatched,
+// this function will still allow the incoming origin to prevent accidental CORS blocks.
+const onrenderPattern = /^https?:\/\/([a-z0-9-]+\.)*onrender\.com$/i;
+const localhostPattern = /^https?:\/\/localhost(:\d+)?$/i;
+
+const corsOrigin = (origin: string | undefined, callback: (err: Error | null, allow: boolean) => void) => {
+  // Allow non-browser clients with no origin
+  if (!origin) return callback(null, true);
+
+  // Allow exact explicit origins
+  const explicit = allowedOrigins.filter(Boolean) as string[];
+  if (explicit.includes(origin)) return callback(null, true);
+
+  // Allow Render service domains and localhost by default
+  if (onrenderPattern.test(origin) || localhostPattern.test(origin)) return callback(null, true);
+
+  // Otherwise, block
+  return callback(null, false);
+};
+
 // Render-specific configuration
 export const renderSocketConfig: Partial<ServerOptions> = {
   cors: {
-    origin: allowedOrigins,
+    origin: corsOrigin as any,
     methods: ['GET', 'POST'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization']
