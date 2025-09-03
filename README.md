@@ -99,6 +99,10 @@ Collabo can be easily deployed to [Render](https://render.com) with WebSocket su
 7. **Troubleshooting Deployment Issues**
    - If you see a "Cannot find module './render-config'" error, verify the import path in `server/index.ts` uses `"./render-config"` (not `"../server/render-config"`)
    - Check that you're using the Render-specific start command (`npm run start:render`) which correctly handles the working directory
+   - If you encounter a CSS build error with `caniuse-lite` (`Cannot find module './features/cross-document-view-transitions'`), the deployment includes fixes for this:
+     - Modified PostCSS configuration to remove autoprefixer dependency
+     - Added a patching script to handle missing features
+     - Used package overrides to lock caniuse-lite to a compatible version
    - Verify that all environment variables are set correctly in the Render dashboard
    - For other issues, check the detailed troubleshooting guide in `RENDER_DEPLOYMENT.md`
 

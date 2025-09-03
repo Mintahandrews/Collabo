@@ -4,7 +4,7 @@ services:
     name: collabo-web
     env: node
     plan: starter # Choose appropriate plan based on your needs
-    buildCommand: npm cache clean --force && npm run build
+    buildCommand: chmod +x ./render-build.sh && ./render-build.sh
     startCommand: npm run start:render
     healthCheckPath: /health
     # Enable WebSockets

@@ -12,12 +12,22 @@ Another issue was with the CSS build process failing due to a missing module in 
 Error: Cannot find module './features/cross-document-view-transitions'
 ```
 
-This has been fixed by:
-- Downgrading caniuse-lite to a compatible version (`^1.0.30001568`) in package.json
-- Adding a browserslist database update step to the build process
-- Creating a `.browserslistrc` file to explicitly define supported browsers
-- Updating PostCSS configuration to avoid problematic features
-- Cleaning npm cache before build in render.yaml
+This has been fixed with a comprehensive approach:
+
+1. **Custom Build Script**: Created a Render-specific build script (`render-build.sh`) that:
+   - Installs a specific compatible version of caniuse-lite (`1.0.30001502`)  
+   - Creates the missing module structure and files
+   - Patches the caniuse-lite features registry
+   - Builds the application with special environment flags
+
+2. **PostCSS Configuration**: Modified to completely remove autoprefixer dependency
+
+3. **Package.json Updates**:
+   - Added `overrides` to lock caniuse-lite version
+   - Added build:patch script for patching caniuse-lite
+
+4. **Render.yaml Update**:
+   - Updated to use our custom build script instead of standard npm commands
 
 ### 2. Build and Start Scripts
 The following scripts were updated to ensure proper deployment:
