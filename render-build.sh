@@ -9,8 +9,9 @@ echo "Cleaning previous builds..."
 rm -rf build
 rm -rf .next
 
-# Install dependencies
-echo "Installing dependencies..."
+# Install dependencies including dev deps regardless of NODE_ENV
+echo "Installing dependencies (including dev deps)..."
+export NPM_CONFIG_PRODUCTION=false
 npm ci
 
 # Run the centralized patch script (stubs any missing caniuse-lite features)
