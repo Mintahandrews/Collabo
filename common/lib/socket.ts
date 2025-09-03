@@ -17,6 +17,12 @@ const getServerUrl = () => {
   return process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3000";
 };
 
+// Configure transports with optional force-polling to stabilize on some proxies (e.g., Render)
+const forcePolling =
+  process.env.NEXT_PUBLIC_FORCE_POLLING === "true" ||
+  process.env.NEXT_PUBLIC_FORCE_POLLING === "1";
+const clientTransports = forcePolling ? ["polling"] : ["polling", "websocket"];
+
 // Enhanced socket configuration for Render compatibility
 export const socket: AppSocket = io(getServerUrl(), {
   reconnection: true,
@@ -26,14 +32,14 @@ export const socket: AppSocket = io(getServerUrl(), {
   randomizationFactor: 0.5, // Add randomization to reconnection attempts
   timeout: 30000, // Increase timeout for high-latency connections
   
-  // Render works best with websocket first, then polling as fallback
-  transports: ["websocket", "polling"],
+  // Prefer polling first, then upgrade to websocket when possible
+  transports: clientTransports,
   
   forceNew: true,
   autoConnect: true,
   path: "/socket.io",
-  upgrade: true, // Enable transport upgrades
-  rememberUpgrade: true, // Remember successful upgrades between sessions
+  upgrade: !forcePolling, // Disable upgrades when forcing polling
+  rememberUpgrade: false, // Avoid sticky websocket preference across sessions
   rejectUnauthorized: false, // For mixed content issues with self-signed certs
   
   // Additional configuration for Render
@@ -52,10 +58,14 @@ socket.on("connect", () => {
 socket.on("disconnect", (reason: string) => {
   console.log(`Socket disconnected: ${reason}`);
   // Automatically try to reconnect on disconnect with increasing backoff
-  if (reason === "transport close" || reason === "ping timeout" || reason === "transport error") {
+  if (
+    reason === "transport close" ||
+    reason === "ping timeout" ||
+    reason === "transport error"
+  ) {
     console.log("Attempting to reconnect...");
     // If we're having connection issues, try to force polling
-    if (!socket.connected && reason === "transport error") {
+    if (!socket.connected) {
       console.log("Trying connection with polling transport only");
       // Reset the socket's transport to only use polling
       socket.io.opts.transports = ["polling"];

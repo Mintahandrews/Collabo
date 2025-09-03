@@ -87,6 +87,7 @@ Collabo can be easily deployed to [Render](https://render.com) with WebSocket su
    - `PORT`: 3000
    - `NEXT_PUBLIC_APP_URL`: Your Render service URL (e.g., https://collabo-web.onrender.com)
    - `NEXT_PUBLIC_SOCKET_URL`: Same as your app URL (e.g., https://collabo-web.onrender.com)
+   - `NEXT_PUBLIC_FORCE_POLLING`: optional, set to `1` to force polling-only on clients (useful if websocket upgrades are flaky)
 
 5. **Enable WebSockets**
    - In your service settings, scroll down to "WebSockets"
@@ -119,6 +120,7 @@ For subsequent deployments, Render will automatically redeploy when you push cha
    - `PORT=3000`
    - `NEXT_PUBLIC_APP_URL=https://<your-service>.onrender.com`
    - `NEXT_PUBLIC_SOCKET_URL=https://<your-service>.onrender.com`
+   - `NEXT_PUBLIC_FORCE_POLLING=1` (optional; temporarily force polling-only to stabilize connections)
 
 2. Commands (Service Settings):
    - Build: `chmod +x ./render-build.sh && ./render-build.sh`
@@ -135,7 +137,7 @@ For subsequent deployments, Render will automatically redeploy when you push cha
    - Confirm env vars are set exactly to your service URL
    - Ensure the service is using the custom build script and `start:render`
    - Check logs for socket diagnostics (transport, upgrades, disconnect reasons)
-   - Retry with client transports forced to polling to isolate upgrade issues
+   - Retry with client transports forced to polling to isolate upgrade issues (set `NEXT_PUBLIC_FORCE_POLLING=1`)
 
 ## 🛠️ Technologies Used
 
