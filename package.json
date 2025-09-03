@@ -1,17 +1,16 @@
 {
   "name": "collabo-by-codemintah-web",
   "private": true,
-  "overrides": {
-    "caniuse-lite": "1.0.30001502"
+  "engines": {
+    "node": "20.x"
   },
   "scripts": {
     "dev": "nodemon -r dotenv/config server/index.ts",
     "dev:client": "ts-node -r dotenv/config server/index.ts",
     "build:server": "tsc --project tsconfig.server.json",
     "build:next": "next build",
-    "build:deps": "npx update-browserslist-db@latest && npx browserslist@latest --update-db",
     "build:patch": "node render-patch.js",
-    "build": "rm -rf build && npm-run-all build:deps build:patch build:server build:next",
+    "build": "rm -rf build && npm-run-all build:patch build:server build:next",
     "start": "NODE_ENV=production node -r dotenv/config build/index.js",
     "start:render": "cd /opt/render/project/src && NODE_ENV=production node -r dotenv/config build/index.js",
     "start:debug": "NODE_ENV=production DEBUG=* node -r dotenv/config build/index.js",
@@ -20,7 +19,6 @@
   "dependencies": {
     "@types/lodash": "^4.14.191",
     "@types/socket.io-client": "^1.4.36",
-    "caniuse-lite": "^1.0.30001568",
     "dotenv": "^16.5.0",
     "express": "^4.17.3",
     "framer-motion": "^6.3.3",

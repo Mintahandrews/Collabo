@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Script for building the application on Render with CSS workarounds
 echo "Starting Render-specific build script"
@@ -7,6 +8,10 @@ echo "Starting Render-specific build script"
 echo "Cleaning previous builds..."
 rm -rf build
 rm -rf .next
+
+# Install dependencies
+echo "Installing dependencies..."
+npm ci
 
 # Install a specific version of caniuse-lite known to work
 echo "Installing specific caniuse-lite version..."
