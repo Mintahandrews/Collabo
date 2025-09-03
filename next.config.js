@@ -4,4 +4,6 @@ module.exports = {
   images: {
     domains: []
   },
+  // Disable automatic font optimization to avoid cssnano invoking caniuse-lite
+  optimizeFonts: false,
 };

@@ -25,6 +25,26 @@ function createEmptyFeatureFile() {
   }
 }
 
+// Create an empty module for css-if
+function createEmptyFeatureFileCssIf() {
+  try {
+    const featureDir = path.resolve('./node_modules/caniuse-lite/data/features');
+    const targetFile = path.join(featureDir, 'css-if.js');
+
+    if (!fs.existsSync(featureDir)) {
+      console.log('Creating features directory...');
+      fs.mkdirSync(featureDir, { recursive: true });
+    }
+
+    fs.writeFileSync(targetFile, 'module.exports={};\n', 'utf8');
+    console.log(`Created empty module at ${targetFile}`);
+    return true;
+  } catch (err) {
+    console.error('Error creating empty feature file (css-if):', err);
+    return false;
+  }
+}
+
 // Update features.js to include the reference
 function updateFeaturesIndex() {
   try {
@@ -34,17 +54,32 @@ function updateFeaturesIndex() {
       console.log('Updating features index...');
       
       let content = fs.readFileSync(featuresPath, 'utf8');
-      
-      if (content.includes('cross-document-view-transitions')) {
-        console.log('Features index already contains the feature - no need to patch');
+      const needsCross = !content.includes('"cross-document-view-transitions"');
+      const needsCssIf = !content.includes('"css-if"');
+
+      if (!needsCross && !needsCssIf) {
+        console.log('Features index already contains required stubs - no need to patch');
         return true;
       }
-      
-      // Add the missing feature to the exports
-      content = content.replace(
-        'module.exports = {', 
-        'module.exports = {\n  "cross-document-view-transitions": require("./features/cross-document-view-transitions"),\n  '
-      );
+
+      // Build insertion lines only for missing features
+      const lines = [];
+      if (needsCross) {
+        lines.push('"cross-document-view-transitions": require("./features/cross-document-view-transitions"),');
+      }
+      if (needsCssIf) {
+        lines.push('"css-if": require("./features/css-if"),');
+      }
+
+      const insertionLines = lines.join('\n  ');
+      // Insert after the opening of module.exports = {, be tolerant to whitespace
+      const regex = /module\.exports\s*=\s*\{/;
+      if (regex.test(content)) {
+        content = content.replace(regex, (match) => match + '\n  ' + insertionLines + '\n  ');
+      } else {
+        console.warn('Unexpected features.js format; could not find module.exports = { pattern. Skipping index patch.');
+        return true; // Do not fail the patch; stubs still created as files
+      }
       
       fs.writeFileSync(featuresPath, content, 'utf8');
       console.log('Successfully patched features index');
@@ -60,7 +95,7 @@ function updateFeaturesIndex() {
 }
 
 // Apply both patches
-let success = createEmptyFeatureFile() && updateFeaturesIndex();
+let success = createEmptyFeatureFile() && createEmptyFeatureFileCssIf() && updateFeaturesIndex();
 
 // If patching was successful, clear the Next.js cache
 if (success) {
