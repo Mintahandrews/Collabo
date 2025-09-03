@@ -225,6 +225,14 @@ const setupApp = async () => {
   const app = express();
   const server = createServer(app);
   
+  // Tune Node HTTP server timeouts for proxies (Cloudflare/Render)
+  // Helps prevent sporadic 502s and premature connection closes on long polling / upgrades
+  server.keepAliveTimeout = 61_000; // must be < headersTimeout
+  server.headersTimeout = 65_000;   // keep a small buffer above keepAliveTimeout
+  // Disable per-request timeouts to support long-lived polling requests
+  // (cast to any for older @types/node compatibility)
+  (server as any).requestTimeout = 0;
+  
   // Create socket server
   const io = createSocketServer(server);
 
