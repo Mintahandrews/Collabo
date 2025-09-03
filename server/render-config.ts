@@ -60,8 +60,8 @@ export const healthCheckPath = '/health';
 // Render service information
 export const renderServiceInfo = {
   serviceType: 'web',
-  buildCommand: 'npm run build',
-  startCommand: 'npm run start',
+  buildCommand: 'chmod +x ./render-build.sh && ./render-build.sh',
+  startCommand: 'npm run start:render',
   envVars: [
     'NODE_ENV',
     'PORT',

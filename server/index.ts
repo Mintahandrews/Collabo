@@ -44,8 +44,29 @@ const undoMove = (roomId: string, socketId: string) => {
 const createSocketServer = (server: any) => {
   const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, renderSocketConfig);
 
+  // Log engine.io handshake failures (useful on Render)
+  io.engine.on("connection_error", (err: any) => {
+    console.error(`[engine] connection_error code=${err.code} message=${err.message}`, err.context || {});
+  });
+
   // WebRTC signaling events
   io.on("connection", (socket) => {
+    // Connection diagnostics
+    try {
+      const t = socket.conn.transport.name;
+      console.log(
+        `[socket] connect id=${socket.id} transport=${t} ip=${socket.handshake.address} origin=${(socket.handshake.headers as any)?.origin || 'n/a'}`
+      );
+      socket.conn.on("upgrade", (newTransport: any) => {
+        console.log(`[socket] upgrade id=${socket.id} transport=${newTransport.name}`);
+      });
+    } catch (e) {
+      console.warn("[socket] unable to log transport details", e);
+    }
+
+    socket.on("error", (err: any) => {
+      console.error(`[socket] error id=${socket.id} transport=${socket.conn.transport.name}`, err);
+    });
     socket.on(
       "webrtc_offer",
       (offer: RTCSessionDescriptionInit, targetId: string) => {
@@ -70,7 +91,8 @@ const createSocketServer = (server: any) => {
       }
     );
 
-    socket.on("disconnect", () => {
+    socket.on("disconnect", (reason: string) => {
+      console.log(`[socket] disconnect id=${socket.id} reason=${reason}`);
       const rooms = [...socket.rooms];
       rooms.forEach((room) => {
         if (room !== socket.id) {

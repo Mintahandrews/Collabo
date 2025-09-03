@@ -22,7 +22,7 @@ Collabo is a powerful web-based collaborative whiteboard application that allows
 
 ### Prerequisites
 
-- Node.js 14.x or higher
+- Node.js 20.x
 - npm or yarn
 
 ### Installation
@@ -78,7 +78,7 @@ Collabo can be easily deployed to [Render](https://render.com) with WebSocket su
    - **Environment:** Node
    - **Region:** Choose the region closest to your users
    - **Branch:** main (or your preferred branch)
-   - **Build Command:** `npm run build`
+   - **Build Command:** `chmod +x ./render-build.sh && ./render-build.sh`
    - **Start Command:** `npm run start:render`
    - **Instance Type:** Choose based on your needs (Starter is good for beginning)
 
@@ -111,6 +111,31 @@ Collabo can be easily deployed to [Render](https://render.com) with WebSocket su
    - You can use this file to create and configure your Render services automatically
 
 For subsequent deployments, Render will automatically redeploy when you push changes to your repository.
+
+### Render Deployment Checklist
+
+1. Environment variables (in Render dashboard):
+   - `NODE_ENV=production`
+   - `PORT=3000`
+   - `NEXT_PUBLIC_APP_URL=https://<your-service>.onrender.com`
+   - `NEXT_PUBLIC_SOCKET_URL=https://<your-service>.onrender.com`
+
+2. Commands (Service Settings):
+   - Build: `chmod +x ./render-build.sh && ./render-build.sh`
+   - Start: `npm run start:render`
+   - WebSockets: enabled
+   - Health check path: `/health`
+
+3. Validate after deploy:
+   - Browser: visit `https://<your-service>/health` (expects 200 JSON)
+   - Polling: `curl -i "https://<your-service>/socket.io/?EIO=4&transport=polling"`
+   - DevTools → Network → WS: confirm `transport=websocket` upgrades (101). If WS fails, polling requests should still return 200 (no 502).
+
+4. If you see 502s or websocket errors:
+   - Confirm env vars are set exactly to your service URL
+   - Ensure the service is using the custom build script and `start:render`
+   - Check logs for socket diagnostics (transport, upgrades, disconnect reasons)
+   - Retry with client transports forced to polling to isolate upgrade issues
 
 ## 🛠️ Technologies Used
 
