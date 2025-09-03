@@ -8,14 +8,26 @@ const express_1 = __importDefault(require("express"));
 const next_1 = __importDefault(require("next"));
 const socket_io_1 = require("socket.io");
 const uuid_1 = require("uuid");
+const render_config_1 = require("./render-config");
 const port = parseInt(process.env.PORT || "3000", 10);
 const dev = process.env.NODE_ENV !== "production";
 const nextApp = (0, next_1.default)({ dev });
 const nextHandler = nextApp.getRequestHandler();
-nextApp.prepare().then(async () => {
-    const app = (0, express_1.default)();
-    const server = (0, http_1.createServer)(app);
-    const io = new socket_io_1.Server(server);
+// Store rooms in memory (note: this will be cleared on serverless cold starts)
+const rooms = new Map();
+const addMove = (roomId, socketId, move) => {
+    const room = rooms.get(roomId);
+    if (!room.users.has(socketId)) {
+        room.usersMoves.set(socketId, [move]);
+    }
+    room.usersMoves.get(socketId).push(move);
+};
+const undoMove = (roomId, socketId) => {
+    const room = rooms.get(roomId);
+    room.usersMoves.get(socketId).pop();
+};
+const createSocketServer = (server) => {
+    const io = new socket_io_1.Server(server, render_config_1.renderSocketConfig);
     // WebRTC signaling events
     io.on("connection", (socket) => {
         socket.on("webrtc_offer", (offer, targetId) => {
@@ -41,23 +53,6 @@ nextApp.prepare().then(async () => {
                 }
             });
         });
-    });
-    app.get("/health", async (_, res) => {
-        res.send("Healthy");
-    });
-    const rooms = new Map();
-    const addMove = (roomId, socketId, move) => {
-        const room = rooms.get(roomId);
-        if (!room.users.has(socketId)) {
-            room.usersMoves.set(socketId, [move]);
-        }
-        room.usersMoves.get(socketId).push(move);
-    };
-    const undoMove = (roomId, socketId) => {
-        const room = rooms.get(roomId);
-        room.usersMoves.get(socketId).pop();
-    };
-    io.on("connection", (socket) => {
         const getRoomId = () => {
             const joinedRoom = [...socket.rooms].find((room) => room !== socket.id);
             if (!joinedRoom)
@@ -147,9 +142,57 @@ nextApp.prepare().then(async () => {
             io.to(roomId).emit("user_disconnected", socket.id);
         });
     });
+    return io;
+};
+// Shared app setup
+const setupApp = async () => {
+    const app = (0, express_1.default)();
+    const server = (0, http_1.createServer)(app);
+    // Create socket server
+    const io = createSocketServer(server);
+    // Health check endpoint for Render
+    app.get(render_config_1.healthCheckPath, (_, res) => {
+        res.status(200).send({
+            status: "Healthy",
+            timestamp: new Date().toISOString(),
+            uptime: process.uptime()
+        });
+    });
+    // Handle all Next.js requests
     app.all("*", (req, res) => nextHandler(req, res));
-    server.listen(port, () => {
-        // eslint-disable-next-line no-console
-        console.log(`> Ready on http://localhost:${port}`);
+    return { app, server, io };
+};
+// For development server
+if (dev) {
+    nextApp.prepare().then(async () => {
+        const { app, server } = await setupApp();
+        server.listen(port, () => {
+            console.log(`> Development server ready on http://localhost:${port}`);
+            console.log(`> WebSocket server running on ws://localhost:${port}`);
+        });
+    });
+}
+else {
+    // For production environment (including Render)
+    nextApp.prepare().then(async () => {
+        const { app, server } = await setupApp();
+        server.listen(port, () => {
+            console.log(`> Production server ready on port ${port}`);
+            console.log(`> Environment: ${process.env.NODE_ENV}`);
+            console.log(`> App URL: ${process.env.NEXT_PUBLIC_APP_URL || 'Not configured'}`);
+        });
+    });
+}
+// For serverless environments
+const app = (0, express_1.default)();
+const server = (0, http_1.createServer)(app);
+createSocketServer(server);
+app.get(render_config_1.healthCheckPath, (_, res) => {
+    res.status(200).send({
+        status: "Healthy",
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV
     });
 });
+app.all("*", (req, res) => nextHandler(req, res));
+exports.default = app;

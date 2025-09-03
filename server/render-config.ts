@@ -1,23 +1,17 @@
 // Render-specific socket configuration
+import { ServerOptions } from "socket.io";
+
+// Define allowed origins
+const allowedOrigins = [
+  process.env.NEXT_PUBLIC_APP_URL || '',
+  'http://localhost:3000',
+  'https://localhost:3000'
+];
 
 // Render-specific configuration
-export const renderSocketConfig = {
+export const renderSocketConfig: Partial<ServerOptions> = {
   cors: {
-    origin: (origin: string, callback: (err: Error | null, allow?: boolean) => void) => {
-      // Allow connections from the deployed app URL and localhost for development
-      const allowedOrigins = [
-        process.env.NEXT_PUBLIC_APP_URL,
-        'http://localhost:3000',
-        'https://localhost:3000'
-      ];
-      
-      // If no origin or if the origin is in the allowed list
-      if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-        callback(null, true);
-      } else {
-        callback(null, false);
-      }
-    },
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization']
