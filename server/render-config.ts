@@ -38,6 +38,8 @@ export const renderSocketConfig: Partial<ServerOptions> = {
   },
   transports: ['websocket', 'polling'],
   path: '/socket.io',
+  // Disable compression to avoid issues with certain reverse proxies
+  perMessageDeflate: false,
   pingTimeout: 60000,
   pingInterval: 25000,
   connectTimeout: 45000,
