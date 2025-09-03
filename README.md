@@ -62,6 +62,42 @@ yarn build
 yarn start
 ```
 
+### Deploying to Render
+
+Collabo can be easily deployed to [Render](https://render.com) with WebSocket support.
+
+1. **Fork or clone this repository**
+
+2. **Create a new Web Service on Render**
+   - Sign in to your Render account
+   - Click "New +" and select "Web Service"
+   - Connect your GitHub/GitLab account or provide the repository URL
+
+3. **Configure the service**
+   - **Name:** Choose a name for your service
+   - **Environment:** Node
+   - **Region:** Choose the region closest to your users
+   - **Branch:** main (or your preferred branch)
+   - **Build Command:** `npm run build`
+   - **Start Command:** `npm run start:render`
+   - **Instance Type:** Choose based on your needs (Starter is good for beginning)
+
+4. **Add environment variables**
+   - `NODE_ENV`: production
+   - `PORT`: 3000
+   - `NEXT_PUBLIC_APP_URL`: Your Render service URL (e.g., https://collabo-web.onrender.com)
+   - `NEXT_PUBLIC_SOCKET_URL`: Same as your app URL (e.g., https://collabo-web.onrender.com)
+
+5. **Enable WebSockets**
+   - In your service settings, scroll down to "WebSockets"
+   - Toggle "Enable WebSockets" to On
+
+6. **Deploy**
+   - Click "Create Web Service"
+   - Render will automatically deploy your application
+
+For subsequent deployments, Render will automatically redeploy when you push changes to your repository.
+
 ## 🛠️ Technologies Used
 
 - **Next.js** - React framework for server-rendered applications

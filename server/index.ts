@@ -9,6 +9,7 @@ import express from "express";
 import next, { NextApiHandler } from "next";
 import { Server } from "socket.io";
 import { v4 } from "uuid";
+import { renderSocketConfig, healthCheckPath } from "./render-config";
 
 const port = parseInt(process.env.PORT || "3000", 10);
 const dev = process.env.NODE_ENV !== "production";
@@ -32,22 +33,7 @@ const undoMove = (roomId: string, socketId: string) => {
 };
 
 const createSocketServer = (server: any) => {
-  const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
-    cors: {
-      origin:
-        process.env.NODE_ENV === "production"
-          ? process.env.NEXT_PUBLIC_APP_URL
-          : "http://localhost:3000",
-      methods: ["GET", "POST"],
-      credentials: true,
-    },
-    transports: ["websocket", "polling"],
-    path: "/socket.io",
-    pingTimeout: 60000,
-    pingInterval: 25000,
-    connectTimeout: 45000,
-    allowEIO3: true,
-  });
+  const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, renderSocketConfig);
 
   // WebRTC signaling events
   io.on("connection", (socket) => {
@@ -203,29 +189,64 @@ const createSocketServer = (server: any) => {
   return io;
 };
 
+// Shared app setup
+const setupApp = async () => {
+  const app = express();
+  const server = createServer(app);
+  
+  // Create socket server
+  const io = createSocketServer(server);
+
+  // Health check endpoint for Render
+  app.get(healthCheckPath, (_, res) => {
+    res.status(200).send({
+      status: "Healthy",
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    });
+  });
+  
+  // Handle all Next.js requests
+  app.all("*", (req: any, res: any) => nextHandler(req, res));
+  
+  return { app, server, io };
+};
+
 // For development server
 if (dev) {
-  nextApp.prepare().then(() => {
-    const app = express();
-    const server = createServer(app);
-
-    createSocketServer(server);
-
-    app.get("/health", (_, res) => res.send("Healthy"));
-    app.all("*", (req: any, res: any) => nextHandler(req, res));
-
+  nextApp.prepare().then(async () => {
+    const { app, server } = await setupApp();
+    
     server.listen(port, () => {
-      console.log(`> Ready on http://localhost:${port}`);
+      console.log(`> Development server ready on http://localhost:${port}`);
+      console.log(`> WebSocket server running on ws://localhost:${port}`);
+    });
+  });
+} else {
+  // For production environment (including Render)
+  nextApp.prepare().then(async () => {
+    const { app, server } = await setupApp();
+    
+    server.listen(port, () => {
+      console.log(`> Production server ready on port ${port}`);
+      console.log(`> Environment: ${process.env.NODE_ENV}`);
+      console.log(`> App URL: ${process.env.NEXT_PUBLIC_APP_URL || 'Not configured'}`);
     });
   });
 }
 
-// For production serverless environment
+// For serverless environments
 const app = express();
 const server = createServer(app);
 createSocketServer(server);
 
-app.get("/health", (_, res) => res.send("Healthy"));
+app.get(healthCheckPath, (_, res) => {
+  res.status(200).send({
+    status: "Healthy",
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV
+  });
+});
 app.all("*", (req: any, res: any) => nextHandler(req, res));
 
 export default app;

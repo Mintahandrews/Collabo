@@ -5,24 +5,43 @@ import io from "socket.io-client";
 const getServerUrl = () => {
   if (typeof window !== "undefined") {
     // Browser environment
+    // For Render deployments, use the same origin for WebSocket connections
+    // This ensures we connect to the correct WebSocket endpoint on Render
     const protocol = window.location.protocol;
     const host = window.location.host;
     return `${protocol}//${host}`;
   }
+  
+  // For server-side rendering, use the environment variable
+  // In Render, this would be the service URL
   return process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3000";
 };
 
-// Configure socket with reconnection options for better reliability
+// Enhanced socket configuration for Render compatibility
 export const socket: AppSocket = io(getServerUrl(), {
   reconnection: true,
   reconnectionAttempts: Infinity, // Keep trying to reconnect indefinitely
   reconnectionDelay: 1000,
   reconnectionDelayMax: 5000,
-  timeout: 20000,
+  randomizationFactor: 0.5, // Add randomization to reconnection attempts
+  timeout: 30000, // Increase timeout for high-latency connections
+  
+  // Render works best with websocket first, then polling as fallback
   transports: ["websocket", "polling"],
+  
   forceNew: true,
   autoConnect: true,
   path: "/socket.io",
+  upgrade: true, // Enable transport upgrades
+  rememberUpgrade: true, // Remember successful upgrades between sessions
+  rejectUnauthorized: false, // For mixed content issues with self-signed certs
+  
+  // Additional configuration for Render
+  auth: {
+    clientInfo: "Collabo WebSocket Client"
+  },
+  // Socket.IO manages keep-alive internally
+  // We'll rely on the default behavior for connection maintenance
 });
 
 // Add connection status monitoring
@@ -32,22 +51,41 @@ socket.on("connect", () => {
 
 socket.on("disconnect", (reason: string) => {
   console.log(`Socket disconnected: ${reason}`);
-  // Automatically try to reconnect on disconnect
-  if (reason === "transport close" || reason === "ping timeout") {
+  // Automatically try to reconnect on disconnect with increasing backoff
+  if (reason === "transport close" || reason === "ping timeout" || reason === "transport error") {
     console.log("Attempting to reconnect...");
+    // If we're having connection issues, try to force polling
+    if (!socket.connected && reason === "transport error") {
+      console.log("Trying connection with polling transport only");
+      // Reset the socket's transport to only use polling
+      socket.io.opts.transports = ["polling"];
+    }
+    
     setTimeout(() => {
-      socket.connect();
-    }, 1000);
+      if (!socket.connected) {
+        socket.connect();
+      }
+    }, 1500);
   }
 });
 
 socket.on("connect_error", (error: Error) => {
   console.error("Socket connection error:", error);
-  // Try to reconnect on error after a delay
+  
+  // Check if this might be a network change error
+  if (error.message?.includes("websocket") || error.message?.includes("xhr")) {
+    console.log("Possible network change detected, trying polling transport");
+    socket.io.opts.transports = ["polling"]; // Force polling on network issues
+  }
+  
+  // Try to reconnect on error with a progressive backoff
+  const backoff = Math.min(socket.io.backoff.attempts * 1000, 5000);
   setTimeout(() => {
-    console.log("Attempting to reconnect after error...");
-    socket.connect();
-  }, 1000);
+    console.log(`Attempting to reconnect after error... (attempt ${socket.io.backoff.attempts})`); 
+    if (!socket.connected) {
+      socket.connect();
+    }
+  }, backoff);
 });
 
 socket.on("reconnect", (attempt: number) => {
