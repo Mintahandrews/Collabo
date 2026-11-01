@@ -1,13 +1,26 @@
 import { RgbaColor } from "react-colorful";
 import { Socket } from "socket.io-client";
 
+import type { DesignElement, ElementOp } from "./elements";
+
 export interface ServerToClientEvents {
-  room_exists: (exists: boolean) => void;
+  room_exists: (exists: boolean, kind?: RoomKind) => void;
   joined: (roomId: string, failed?: boolean) => void;
-  room: (room: Room, usersMovesToParse: string, usersToParse: string) => void;
+  room: (
+    room: Room,
+    usersMovesToParse: string,
+    usersToParse: string,
+    elementsToParse: string
+  ) => void;
   created: (roomId: string) => void;
   your_move: (move: Move) => void;
   user_draw: (move: Move, userId: string) => void;
+  element_op: (op: ElementOp, userId: string) => void;
+  element_op_ack: (op: ElementOp) => void;
+  app_starting: (appKey: string) => void;
+  app_ready: (app: RoomApp) => void;
+  app_stopped: () => void;
+  app_error: (msg: string) => void;
   user_undo(userId: string): void;
   mouse_moved: (x: number, y: number, userId: string) => void;
   new_user: (userId: string, username: string) => void;
@@ -26,7 +39,10 @@ export interface ClientToServerEvents {
   draw: (move: Move) => void;
   mouse_move: (x: number, y: number) => void;
   undo: () => void;
-  create_room: (username: string) => void;
+  element_op: (op: ElementOp) => void;
+  start_app: (appKey: string) => void;
+  stop_app: () => void;
+  create_room: (username: string, kind?: RoomKind) => void;
   join_room: (room: string, username: string) => void;
   joined_room: () => void;
   leave_room: () => void;
@@ -77,10 +93,23 @@ export declare global {
     id: string;
   }
 
+  type RoomKind = "whiteboard" | "architect" | "app";
+
+  type RoomApp = {
+    key: string;
+    image: string;
+    containerId: string;
+    port: number;
+    password?: string;
+  };
+
   type Room = {
     usersMoves: Map<string, Move[]>;
     drawn: Move[];
     users: Map<string, string>;
+    elements: DesignElement[];
+    kind: RoomKind;
+    app?: RoomApp;
   };
 
   interface User {
@@ -95,6 +124,8 @@ export declare global {
     movesWithoutUser: Move[];
     myMoves: Move[];
     users: Map<string, User>;
+    kind: RoomKind;
+    app?: RoomApp;
   }
 
   interface Message {

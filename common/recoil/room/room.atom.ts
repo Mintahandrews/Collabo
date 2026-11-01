@@ -7,6 +7,7 @@ export const DEFAULT_ROOM = {
   usersMoves: new Map(),
   movesWithoutUser: [],
   myMoves: [],
+  kind: "whiteboard" as RoomKind,
 };
 
 export const roomAtom = atom<ClientRoom>({

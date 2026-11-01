@@ -4,12 +4,14 @@ import { motion } from "framer-motion";
 import { useRouter } from "next/router";
 import { FiChevronRight } from "react-icons/fi";
 import { HiOutlineDownload } from "react-icons/hi";
+import { VscJson } from "react-icons/vsc";
 import { ImExit } from "react-icons/im";
 import { IoIosShareAlt } from "react-icons/io";
 
 import { CANVAS_SIZE } from "@/common/constants/canvasSize";
 import { DEFAULT_EASE } from "@/common/constants/easings";
 import { useViewportSize } from "@/common/hooks/useViewportSize";
+import { useElements } from "@/common/recoil/elements";
 import { useModal } from "@/common/recoil/modal";
 
 import { useRefs } from "../../hooks/useRefs";
@@ -23,9 +25,10 @@ import ModePicker from "./ModePicker";
 import ShapeSelector from "./ShapeSelector";
 
 const ToolBar = () => {
-  const { canvasRef, bgRef } = useRefs();
+  const { canvasRef, bgRef, archStageRef } = useRefs();
   const { openModal } = useModal();
   const { width } = useViewportSize();
+  const elements = useElements();
 
   const [opened, setOpened] = useState(false);
   const [toolTip, setToolTip] = useState<string | null>(null);
@@ -39,22 +42,50 @@ const ToolBar = () => {
 
   const handleExit = () => router.push("/");
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     const canvas = document.createElement("canvas");
     canvas.width = CANVAS_SIZE.width;
     canvas.height = CANVAS_SIZE.height;
 
     const tempCtx = canvas.getContext("2d");
+    if (!tempCtx) return;
 
-    if (tempCtx && canvasRef.current && bgRef.current) {
-      tempCtx.drawImage(bgRef.current, 0, 0);
-      tempCtx.drawImage(canvasRef.current, 0, 0);
+    if (bgRef.current) tempCtx.drawImage(bgRef.current, 0, 0);
+    if (canvasRef.current) tempCtx.drawImage(canvasRef.current, 0, 0);
+
+    const stage = archStageRef.current;
+    if (stage) {
+      const dataUrl = stage.toDataURL({ pixelRatio: 1 });
+      await new Promise<void>((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          tempCtx.drawImage(img, 0, 0);
+          resolve();
+        };
+        img.src = dataUrl;
+      });
     }
 
     const link = document.createElement("a");
     link.href = canvas.toDataURL("image/png");
     link.download = "canvas.png";
     link.click();
+  };
+
+  const handleExportJSON = () => {
+    const doc = elements.order
+      .map((id) => elements.byId[id])
+      .filter(Boolean);
+    const blob = new Blob(
+      [JSON.stringify({ version: 1, elements: doc }, null, 2)],
+      { type: "application/json" }
+    );
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "design.json";
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleShare = () => openModal(<ShareModal />);
@@ -128,6 +159,22 @@ const ToolBar = () => {
           {toolTip === "Download" && (
             <div className="absolute -top-8 left-1/2 -translate-x-1/2 transform whitespace-nowrap rounded bg-black bg-opacity-75 py-1 px-2 text-xs text-white">
               Download
+            </div>
+          )}
+        </div>
+        <div className="relative">
+          <button
+            className="btn-icon text-2xl"
+            onClick={handleExportJSON}
+            onMouseEnter={() => setToolTip("ExportJSON")}
+            onMouseLeave={() => setToolTip(null)}
+            aria-label="Export design as JSON"
+          >
+            <VscJson />
+          </button>
+          {toolTip === "ExportJSON" && (
+            <div className="absolute -top-8 left-1/2 -translate-x-1/2 transform whitespace-nowrap rounded bg-black bg-opacity-75 py-1 px-2 text-xs text-white">
+              Export JSON
             </div>
           )}
         </div>

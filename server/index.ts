@@ -1,9 +1,20 @@
 import { createServer } from "http";
+import fs from "fs";
+import path from "path";
 
 import type {
   ClientToServerEvents,
   ServerToClientEvents,
 } from "@/common/types/global";
+import type { DesignElement, ElementOp } from "@/common/types/elements";
+
+import {
+  dockerAvailable,
+  reapOrphanedContainers,
+  startAppContainer,
+  stopAppContainer,
+  waitForApp,
+} from "./app-containers";
 
 import express from "express";
 import next, { NextApiHandler } from "next";
@@ -28,8 +39,95 @@ const nextHandler: NextApiHandler = nextApp.getRequestHandler();
 // Store rooms in memory (note: this will be cleared on serverless cold starts)
 const rooms = new Map<string, Room>();
 
+// ---------------------------------------------------------------------------
+// Room persistence (JSON files under DATA_DIR, debounced writes)
+// ---------------------------------------------------------------------------
+
+const DATA_DIR =
+  process.env.DATA_DIR || path.join(process.cwd(), "data", "rooms");
+const saveTimers = new Map<string, NodeJS.Timeout>();
+
+const serializeRoom = (room: Room) =>
+  JSON.stringify({
+    usersMoves: [...room.usersMoves],
+    users: [...room.users],
+    drawn: room.drawn,
+    elements: room.elements,
+    kind: room.kind,
+    savedAt: Date.now(),
+  });
+
+const persistRoom = (roomId: string) => {
+  const room = rooms.get(roomId);
+  if (!room) return;
+
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const file = path.join(DATA_DIR, `${roomId}.json`);
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, serializeRoom(room));
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    console.error(`[store] failed to persist room ${roomId}`, err);
+  }
+};
+
+const scheduleSave = (roomId: string) => {
+  const existing = saveTimers.get(roomId);
+  if (existing) clearTimeout(existing);
+  saveTimers.set(
+    roomId,
+    setTimeout(() => {
+      saveTimers.delete(roomId);
+      persistRoom(roomId);
+    }, 1500)
+  );
+};
+
+// Restored rooms keep the design (drawn moves + elements) but drop stale
+// socket-id-keyed data so no ghost users appear.
+const loadPersistedRooms = () => {
+  let files: string[] = [];
+  try {
+    files = fs
+      .readdirSync(DATA_DIR)
+      .filter((f) => f.endsWith(".json"));
+  } catch {
+    return;
+  }
+
+  files.forEach((file) => {
+    try {
+      const data = JSON.parse(
+        fs.readFileSync(path.join(DATA_DIR, file), "utf8")
+      );
+      const roomId = path.basename(file, ".json");
+      const drawn = [...(data.drawn || [])];
+      (data.usersMoves || []).forEach(
+        ([, moves]: [string, Move[]]) => drawn.push(...moves)
+      );
+
+      rooms.set(roomId, {
+        usersMoves: new Map(),
+        users: new Map(),
+        drawn,
+        elements: data.elements || [],
+        kind: data.kind === "architect" ? "architect" : "whiteboard",
+      });
+      console.log(
+        `[store] restored room ${roomId} (${drawn.length} moves, ${
+          (data.elements || []).length
+        } elements)`
+      );
+    } catch (err) {
+      console.error(`[store] failed to load ${file}`, err);
+    }
+  });
+};
+
 const addMove = (roomId: string, socketId: string, move: Move) => {
-  const room = rooms.get(roomId)!;
+  const room = rooms.get(roomId);
+  if (!room) return;
   if (!room.users.has(socketId)) {
     room.usersMoves.set(socketId, [move]);
   }
@@ -37,8 +135,52 @@ const addMove = (roomId: string, socketId: string, move: Move) => {
 };
 
 const undoMove = (roomId: string, socketId: string) => {
-  const room = rooms.get(roomId)!;
+  const room = rooms.get(roomId);
+  if (!room) return;
   room.usersMoves.get(socketId)!.pop();
+};
+
+// Applies an element op to the room's shared design document.
+// Returns the op as it should be broadcast, or null if invalid.
+const applyElementOp = (
+  room: Room,
+  op: ElementOp,
+  userId: string
+): ElementOp | null => {
+  if (op.kind === "add") {
+    const { element } = op;
+    if (!element || !element.id || !element.type) return null;
+    if (room.elements.some((el) => el.id === element.id)) return null;
+
+    const stored: DesignElement = {
+      ...element,
+      createdBy: userId,
+      timestamp: Date.now(),
+    };
+    room.elements.push(stored);
+
+    return { kind: "add", element: stored };
+  }
+
+  if (op.kind === "update") {
+    const element = room.elements.find((el) => el.id === op.id);
+    if (!element || !op.patch || typeof op.patch !== "object") return null;
+
+    Object.assign(element, op.patch, { id: element.id, type: element.type });
+
+    return { kind: "update", id: op.id, patch: op.patch };
+  }
+
+  if (op.kind === "delete") {
+    const index = room.elements.findIndex((el) => el.id === op.id);
+    if (index === -1) return null;
+
+    room.elements.splice(index, 1);
+
+    return { kind: "delete", id: op.id };
+  }
+
+  return null;
 };
 
 const createSocketServer = (server: any) => {
@@ -115,9 +257,16 @@ const createSocketServer = (server: any) => {
       if (userMoves) room.drawn.push(...userMoves);
       room.users.delete(socketId);
       socket.leave(roomId);
+      scheduleSave(roomId);
+
+      // No one left -> shut down the streamed app, if any
+      if (room.users.size === 0 && room.app) {
+        void stopAppContainer(room.app.containerId);
+        delete room.app;
+      }
     };
 
-    socket.on("create_room", (username: string) => {
+    socket.on("create_room", (username: string, kind?: RoomKind) => {
       let roomId: string;
       do {
         roomId = Math.random().toString(36).substring(2, 6);
@@ -128,13 +277,17 @@ const createSocketServer = (server: any) => {
         usersMoves: new Map([[socket.id, []]]),
         drawn: [],
         users: new Map([[socket.id, username]]),
+        elements: [],
+        kind: kind === "architect" ? "architect" : "whiteboard",
       });
 
       io.to(socket.id).emit("created", roomId);
+      scheduleSave(roomId);
     });
 
     socket.on("check_room", (roomId: string) => {
-      if (rooms.has(roomId)) socket.emit("room_exists", true);
+      const room = rooms.get(roomId);
+      if (room) socket.emit("room_exists", true, room.kind);
       else socket.emit("room_exists", false);
     });
 
@@ -161,7 +314,8 @@ const createSocketServer = (server: any) => {
         "room",
         room,
         JSON.stringify([...room.usersMoves]),
-        JSON.stringify([...room.users])
+        JSON.stringify([...room.users]),
+        JSON.stringify(room.elements)
       );
 
       socket.broadcast
@@ -191,6 +345,8 @@ const createSocketServer = (server: any) => {
       socket.broadcast
         .to(roomId)
         .emit("user_draw", { ...move, timestamp }, socket.id);
+
+      scheduleSave(roomId);
     });
 
     socket.on("undo", () => {
@@ -199,10 +355,106 @@ const createSocketServer = (server: any) => {
       undoMove(roomId, socket.id);
 
       socket.broadcast.to(roomId).emit("user_undo", socket.id);
+      scheduleSave(roomId);
+    });
+
+    socket.on("element_op", (op: ElementOp) => {
+      const roomId = getRoomId();
+      const room = rooms.get(roomId);
+      if (!room || !op) return;
+
+      const applied = applyElementOp(room, op, socket.id);
+      if (!applied) return;
+
+      io.to(socket.id).emit("element_op_ack", applied);
+      socket.broadcast.to(roomId).emit("element_op", applied, socket.id);
+
+      // Cascade: deleting a wall also deletes its doors/windows
+      if (op.kind === "delete") {
+        room.elements
+          .filter(
+            (el) =>
+              (el.type === "door" || el.type === "window") &&
+              el.wallId === op.id
+          )
+          .forEach((child) => {
+            const childOp = applyElementOp(
+              room,
+              { kind: "delete", id: child.id },
+              socket.id
+            );
+            if (childOp) {
+              io.to(socket.id).emit("element_op_ack", childOp);
+              socket.broadcast
+                .to(roomId)
+                .emit("element_op", childOp, socket.id);
+            }
+          });
+      }
+
+      scheduleSave(roomId);
     });
 
     socket.on("mouse_move", (x: number, y: number) => {
       socket.broadcast.to(getRoomId()).emit("mouse_moved", x, y, socket.id);
+    });
+
+    // --- Streamed desktop app (per-room container) ---
+    socket.on("start_app", (appKey: string) => {
+      const roomId = getRoomId();
+      const room = rooms.get(roomId);
+      if (!room) return;
+
+      if (room.app) {
+        socket.emit("app_ready", room.app);
+        return;
+      }
+
+      void (async () => {
+        try {
+          if (!(await dockerAvailable())) {
+            socket.emit(
+              "app_error",
+              "Docker is not running on the server (start Docker Desktop)."
+            );
+            return;
+          }
+
+          io.to(roomId).emit("app_starting", appKey);
+          const { containerId, port, password } = await startAppContainer(
+            roomId,
+            appKey
+          );
+          room.app = { key: appKey, image: appKey, containerId, port, password };
+
+          const ready = await waitForApp(port);
+          if (!ready) {
+            socket.emit(
+              "app_error",
+              "App container started but is not responding yet — try reloading the room."
+            );
+          }
+          io.to(roomId).emit("app_ready", room.app);
+        } catch (err) {
+          console.error("[apps] start failed", err);
+          io.to(roomId).emit(
+            "app_error",
+            `Failed to start app container: ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          );
+        }
+      })();
+    });
+
+    socket.on("stop_app", () => {
+      const roomId = getRoomId();
+      const room = rooms.get(roomId);
+      if (!room?.app) return;
+
+      void stopAppContainer(room.app.containerId);
+      delete room.app;
+      io.to(roomId).emit("app_stopped");
     });
 
     socket.on("send_msg", (msg: string) => {
@@ -224,6 +476,9 @@ const createSocketServer = (server: any) => {
 const setupApp = async () => {
   const app = express();
   const server = createServer(app);
+
+  loadPersistedRooms();
+  void reapOrphanedContainers();
   
   // Tune Node HTTP server timeouts for proxies (Cloudflare/Render)
   // Helps prevent sporadic 502s and premature connection closes on long polling / upgrades

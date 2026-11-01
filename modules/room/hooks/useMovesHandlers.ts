@@ -3,10 +3,16 @@ import { useEffect, useMemo } from "react";
 import { getStringFromRgba } from "@/common/lib/rgba";
 import { socket } from "@/common/lib/socket";
 import { useBackground } from "@/common/recoil/background";
+import {
+  useElementHistory,
+  useElementHistoryActions,
+  useElements,
+} from "@/common/recoil/elements";
 import { useSetSelection } from "@/common/recoil/options";
 import { useMyMoves, useRoom } from "@/common/recoil/room";
 import { useSetSavedMoves } from "@/common/recoil/savedMoves";
 
+import { drawElementsOnMinimap } from "../helpers/minimapElements.helpers";
 import { useCtx } from "./useCtx";
 import { useRefs } from "./useRefs";
 import { useSelection } from "./useSelection";
@@ -21,6 +27,9 @@ export const useMovesHandlers = (clearOnYourMove: () => void) => {
   const ctx = useCtx();
   const bg = useBackground();
   const { clearSelection } = useSetSelection();
+  const elementHistory = useElementHistory();
+  const { undoElement, redoElement } = useElementHistoryActions();
+  const elements = useElements();
 
   const sortedMoves = useMemo(() => {
     const { usersMoves, movesWithoutUser = [], myMoves = [] } = room;
@@ -53,12 +62,16 @@ export const useMovesHandlers = (clearOnYourMove: () => void) => {
           smallCtx.canvas.width,
           smallCtx.canvas.height
         );
+        drawElementsOnMinimap(smallCtx, elements);
       }
     }
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => copyCanvasToSmall(), [bg]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => copyCanvasToSmall(), [elements]);
 
   const drawMove = (move: Move, image?: HTMLImageElement) => {
     const { path } = move;
@@ -208,12 +221,32 @@ export const useMovesHandlers = (clearOnYourMove: () => void) => {
     }
   };
 
+  // Element (arch) ops take undo precedence over whiteboard moves
+  const handleUndoAny = () => {
+    if (elementHistory.undo.length) undoElement();
+    else handleUndo();
+  };
+
+  const handleRedoAny = () => {
+    if (elementHistory.redo.length) redoElement();
+    else handleRedo();
+  };
+
   useEffect(() => {
     const handleUndoRedoKeyboard = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (
+        t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.isContentEditable)
+      )
+        return;
+
       if (e.key === "z" && e.ctrlKey) {
-        handleUndo();
+        handleUndoAny();
       } else if (e.key === "y" && e.ctrlKey) {
-        handleRedo();
+        handleRedoAny();
       }
     };
 
@@ -222,7 +255,8 @@ export const useMovesHandlers = (clearOnYourMove: () => void) => {
     return () => {
       document.removeEventListener("keydown", handleUndoRedoKeyboard);
     };
-  }, [handleUndo, handleRedo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handleUndoAny, handleRedoAny]);
 
-  return { handleUndo, handleRedo };
+  return { handleUndo: handleUndoAny, handleRedo: handleRedoAny };
 };

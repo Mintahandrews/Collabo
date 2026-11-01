@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 
+import dynamic from "next/dynamic";
+
 import { motion } from "framer-motion";
 import { BsArrowsMove } from "react-icons/bs";
 import throttle from "lodash/throttle";
@@ -16,6 +18,8 @@ import { useRefs } from "../../hooks/useRefs";
 import { useSocketDraw } from "../../hooks/useSocketDraw";
 import Background from "./Background";
 import MiniMap from "./Minimap";
+
+const ArchStage = dynamic(() => import("../arch/ArchStage"), { ssr: false });
 
 const Canvas = () => {
   const { canvasRef, bgRef, undoRef, redoRef } = useRefs();
@@ -113,9 +117,7 @@ const Canvas = () => {
     };
   }, [canvasRef, dragging, handleRedo, handleUndo, redoRef, undoRef]);
 
-  useEffect(() => {
-    if (ctx) socket.emit("joined_room");
-  }, [ctx]);
+  // joined_room is emitted once by RoomContextProvider for all room kinds
 
   return (
     <div className="relative h-full w-full overflow-hidden">
@@ -149,6 +151,8 @@ const Canvas = () => {
         onTouchMove={handleTouchMove}
       />
       <Background bgRef={bgRef} />
+
+      <ArchStage />
 
       <MiniMap dragging={dragging} />
       <button

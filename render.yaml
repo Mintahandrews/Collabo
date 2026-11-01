@@ -26,6 +26,12 @@ services:
         sync: false # Required for Twilio TURN
       - key: TWILIO_TTL_SECONDS
         sync: false # Optional; default 3600
+      - key: DATA_DIR
+        value: /var/data/rooms # Persisted room docs on the attached disk
+    disk:
+      name: collabo-data
+      mountPath: /var/data
+      sizeGB: 1
 
 # This file is for Render's Infrastructure as Code (render.yaml)
 # See https://render.com/docs/infrastructure-as-code for more info

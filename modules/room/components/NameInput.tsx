@@ -12,6 +12,7 @@ const NameInput = () => {
   const { openModal } = useModal();
 
   const [name, setName] = useState("");
+  const [roomKind, setRoomKind] = useState<RoomKind | null>(null);
 
   const router = useRouter();
   const roomId = (router.query.roomId || "").toString();
@@ -21,10 +22,10 @@ const NameInput = () => {
 
     socket.emit("check_room", roomId);
 
-    socket.on("room_exists", (exists: boolean) => {
+    socket.on("room_exists", (exists: boolean, kind?: RoomKind) => {
       if (!exists) {
         router.push("/");
-      }
+      } else setRoomKind(kind || "whiteboard");
     });
 
     // eslint-disable-next-line consistent-return
@@ -60,15 +61,20 @@ const NameInput = () => {
 
   return (
     <form
-      className="my-24 flex flex-col items-center"
+      className="flex min-h-screen flex-col items-center px-4 py-16 sm:py-24"
       onSubmit={handleJoinRoom}
     >
-      <h1 className="text-5xl font-extrabold leading-tight sm:text-extra">
+      <h1 className="text-4xl font-extrabold leading-tight sm:text-5xl">
         Collaborator
       </h1>
-      <h3 className="text-xl sm:text-2xl">Real-time whiteboard</h3>
+      <h3 className="text-lg sm:text-2xl">Real-time design studio</h3>
+      {roomKind && (
+        <span className="mt-3 rounded-full bg-gray-800 px-4 py-1 text-sm font-medium capitalize text-white">
+          {roomKind === "app" ? "Desktop app" : roomKind} room
+        </span>
+      )}
 
-      <div className="mt-10 flex flex-col gap-2">
+      <div className="mt-10 flex w-full max-w-sm flex-col gap-2">
         <label className="self-start font-bold leading-tight">
           Enter your name
         </label>
@@ -77,14 +83,14 @@ const NameInput = () => {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="John Doe"
-          className="rounded-lg border border-gray-300 p-2 text-lg focus:border-gray-600 focus:outline-none"
+          className="w-full rounded-lg border border-gray-300 p-2 text-lg focus:border-gray-600 focus:outline-none"
           required
         />
       </div>
 
       <button
         type="submit"
-        className="mt-6 rounded-lg bg-gray-800 px-6 py-2 text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-opacity-50"
+        className="mt-6 w-full max-w-sm rounded-lg bg-gray-800 px-6 py-3 text-lg text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:bg-opacity-50"
         disabled={!name.trim()}
       >
         Join Room

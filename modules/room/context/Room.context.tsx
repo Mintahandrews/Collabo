@@ -1,6 +1,7 @@
 import {
   createContext,
   Dispatch,
+  MutableRefObject,
   ReactChild,
   RefObject,
   SetStateAction,
@@ -10,12 +11,15 @@ import {
 } from "react";
 
 import { MotionValue, useMotionValue } from "framer-motion";
+import type { Stage as KonvaStage } from "konva/lib/Stage";
 import { toast } from "react-toastify";
 
 import { COLORS_ARRAY } from "@/common/constants/colors";
 import { socket } from "@/common/lib/socket";
+import { useSetElements } from "@/common/recoil/elements";
 import { useSetUsers } from "@/common/recoil/room";
 import { useSetRoom, useRoom } from "@/common/recoil/room/room.hooks";
+import type { DesignElement, ElementOp } from "@/common/types/elements";
 
 export const roomContext = createContext<{
   x: MotionValue<number>;
@@ -26,6 +30,7 @@ export const roomContext = createContext<{
   bgRef: RefObject<HTMLCanvasElement>;
   selectionRefs: RefObject<HTMLButtonElement[]>;
   minimapRef: RefObject<HTMLCanvasElement>;
+  archStageRef: MutableRefObject<KonvaStage | null>;
   moveImage: { base64: string; x?: number; y?: number };
   setMoveImage: Dispatch<
     SetStateAction<{
@@ -40,12 +45,14 @@ const RoomContextProvider = ({ children }: { children: ReactChild }) => {
   const setRoom = useSetRoom();
   const { users } = useRoom();
   const { handleAddUser, handleRemoveUser } = useSetUsers();
+  const { setElements, applyOp } = useSetElements();
 
   const undoRef = useRef<HTMLButtonElement>(null);
   const redoRef = useRef<HTMLButtonElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bgRef = useRef<HTMLCanvasElement>(null);
   const minimapRef = useRef<HTMLCanvasElement>(null);
+  const archStageRef = useRef<KonvaStage>(null);
   const selectionRefs = useRef<HTMLButtonElement[]>([]);
 
   const [moveImage, setMoveImage] = useState<{
@@ -60,7 +67,12 @@ const RoomContextProvider = ({ children }: { children: ReactChild }) => {
   useEffect(() => {
     socket.on(
       "room",
-      (room: Room, usersMovesToParse: string, usersToParse: string) => {
+      (
+        room: Room,
+        usersMovesToParse: string,
+        usersToParse: string,
+        elementsToParse: string
+      ) => {
         const usersMoves = new Map<string, Move[]>(
           JSON.parse(usersMovesToParse)
         );
@@ -86,9 +98,33 @@ const RoomContextProvider = ({ children }: { children: ReactChild }) => {
           users: newUsers,
           usersMoves,
           movesWithoutUser: room.drawn,
+          kind: room.kind || "whiteboard",
+          app: room.app,
         }));
+
+        setElements(JSON.parse(elementsToParse) as DesignElement[]);
       }
     );
+
+    socket.on("element_op", (op: ElementOp) => {
+      applyOp(op);
+    });
+
+    socket.on("element_op_ack", (op: ElementOp) => {
+      applyOp(op);
+    });
+
+    socket.on("app_ready", (app: RoomApp) => {
+      setRoom((prev) => ({ ...prev, app }));
+    });
+
+    socket.on("app_stopped", () => {
+      setRoom((prev) => ({ ...prev, app: undefined }));
+    });
+
+    socket.on("app_error", (msg: string) => {
+      toast(msg, { position: "top-center", theme: "colored", type: "error" });
+    });
 
     socket.on("new_user", (userId: string, username: string) => {
       toast(`${username} has joined the room.`, {
@@ -108,12 +144,21 @@ const RoomContextProvider = ({ children }: { children: ReactChild }) => {
       handleRemoveUser(userId);
     });
 
+    // Fetch the room doc once for every room kind (app rooms have no canvas)
+    socket.emit("joined_room");
+
     return () => {
       socket.off("room");
       socket.off("new_user");
       socket.off("user_disconnected");
+      socket.off("element_op");
+      socket.off("element_op_ack");
+      socket.off("app_ready");
+      socket.off("app_stopped");
+      socket.off("app_error");
     };
-  }, [handleAddUser, handleRemoveUser, setRoom, users]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <roomContext.Provider
@@ -127,6 +172,7 @@ const RoomContextProvider = ({ children }: { children: ReactChild }) => {
         setMoveImage,
         moveImage,
         minimapRef,
+        archStageRef,
         selectionRefs,
       }}
     >
