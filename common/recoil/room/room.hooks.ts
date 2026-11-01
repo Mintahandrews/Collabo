@@ -1,6 +1,11 @@
 import { useRecoilState, useRecoilValue, useSetRecoilState } from "recoil";
 
 import { getNextColor } from "@/common/lib/getNextColor";
+import { archAtom } from "@/common/recoil/arch";
+import {
+  elementHistoryAtom,
+  elementsAtom,
+} from "@/common/recoil/elements";
 
 import { DEFAULT_ROOM, roomAtom } from "./room.atom";
 
@@ -18,9 +23,21 @@ export const useSetRoom = () => {
 
 export const useSetRoomId = () => {
   const setRoomId = useSetRecoilState(roomAtom);
+  const setElements = useSetRecoilState(elementsAtom);
+  const setHistory = useSetRecoilState(elementHistoryAtom);
+  const setArch = useSetRecoilState(archAtom);
 
   const handleSetRoomId = (id: string) => {
     setRoomId({ ...DEFAULT_ROOM, id });
+    setElements({ order: [], byId: {} });
+    setHistory({ undo: [], redo: [] });
+    setArch({
+      tool: "none",
+      selectedId: null,
+      grid: true,
+      snap: true,
+      view3d: false,
+    });
   };
 
   return handleSetRoomId;
