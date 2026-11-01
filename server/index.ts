@@ -516,6 +516,19 @@ const setupApp = async () => {
       uptime: process.uptime()
     });
   });
+
+  // Feature flags for the client — Docker streaming only works on
+  // Docker-capable hosts (NOT on Render's managed web service)
+  let streamingCached: { value: boolean; at: number } | null = null;
+  app.get("/api/features", async (_: any, res: any) => {
+    if (!streamingCached || Date.now() - streamingCached.at > 60_000) {
+      streamingCached = {
+        value: await dockerAvailable(),
+        at: Date.now(),
+      };
+    }
+    res.json({ appStreaming: streamingCached.value });
+  });
   
   // Ephemeral TURN credentials (Twilio Network Traversal Service)
   app.get("/api/turn-credentials", async (_: any, res: any) => {
