@@ -1,7 +1,27 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
+import fs from "fs";
+import path from "path";
 
 const run = promisify(execFile);
+
+// Per-room shared folder mounted into the container at /shared —
+// the streamed app can open the room's exported design files from there.
+export const APPS_DIR =
+  process.env.APPS_DIR || path.join(process.cwd(), "data", "apps");
+
+export const writeAppFiles = (
+  roomId: string,
+  files: { name: string; content: string }[]
+) => {
+  const dir = path.join(APPS_DIR, roomId);
+  fs.mkdirSync(dir, { recursive: true });
+  files.forEach(({ name, content }) => {
+    const safe = path.basename(name);
+    fs.writeFileSync(path.join(dir, safe), content);
+  });
+  return dir;
+};
 
 // Streamable desktop apps: LinuxServer.io images ship app + KasmVNC
 // web UI on container port 3000.
@@ -64,6 +84,8 @@ export const startAppContainer = async (
       "PGID=1000",
       "-e",
       `PASSWORD=${password}`,
+      "-v",
+      `${path.join(APPS_DIR, roomId)}:/shared`,
       "-p",
       `0:${app.port}`,
       "--shm-size=1g",

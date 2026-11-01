@@ -42,6 +42,7 @@ export interface ClientToServerEvents {
   element_op: (op: ElementOp) => void;
   start_app: (appKey: string) => void;
   stop_app: () => void;
+  app_files: (files: { name: string; content: string }[]) => void;
   create_room: (username: string, kind?: RoomKind) => void;
   join_room: (room: string, username: string) => void;
   joined_room: () => void;

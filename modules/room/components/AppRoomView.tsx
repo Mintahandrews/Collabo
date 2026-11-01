@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 
 import { socket } from "@/common/lib/socket";
+import { useElements } from "@/common/recoil/elements";
 import { useRoom } from "@/common/recoil/room";
+
+import { buildDxf } from "../helpers/dxf.helpers";
+import { buildIfc } from "../helpers/ifc.helpers";
 
 const APPS = [
   { key: "freecad", label: "FreeCAD" },
@@ -10,7 +14,25 @@ const APPS = [
 
 const AppRoomView = () => {
   const room = useRoom();
+  const elements = useElements();
   const [starting, setStarting] = useState<string | null>(null);
+
+  // Push the room's exported design files into the shared /shared folder
+  // so the streamed app can open them.
+  const syncFiles = () => {
+    const doc = elements.order
+      .map((id) => elements.byId[id])
+      .filter(Boolean);
+    if (!doc.length) return;
+    socket.emit("app_files", [
+      { name: "design.ifc", content: buildIfc(elements) },
+      { name: "plan.dxf", content: buildDxf(elements) },
+      {
+        name: "design.json",
+        content: JSON.stringify({ version: 1, elements: doc }, null, 2),
+      },
+    ]);
+  };
 
   useEffect(() => {
     const onStarting = (key: string) => setStarting(key);
@@ -46,6 +68,13 @@ const AppRoomView = () => {
         >
           Stop app
         </button>
+        <button
+          className="btn-icon absolute right-24 top-3 z-10 rounded-lg bg-black/60 px-3 py-2 text-sm text-white hover:bg-black/80"
+          onClick={syncFiles}
+          title="Push current exports to /shared in the app"
+        >
+          Sync files
+        </button>
         {room.app.password && (
           <div className="absolute left-3 top-3 z-10 rounded-lg bg-black/60 px-3 py-1.5 text-xs text-white">
             Login: <b>abc</b> / <b>{room.app.password}</b>
@@ -78,6 +107,7 @@ const AppRoomView = () => {
                 key={app.key}
                 className="rounded-lg bg-gray-800 px-6 py-3 text-white transition-colors hover:bg-gray-700"
                 onClick={() => {
+                  syncFiles();
                   setStarting(app.key);
                   socket.emit("start_app", app.key);
                 }}
@@ -88,7 +118,8 @@ const AppRoomView = () => {
           </div>
           <p className="max-w-md text-center text-sm text-zinc-500">
             The app runs in a container on the server and is shared by everyone
-            in the room — you all see and control the same session.
+            in the room — you all see and control the same session. Your
+            architect-room exports land in <code>/shared</code> inside the app.
           </p>
         </>
       )}

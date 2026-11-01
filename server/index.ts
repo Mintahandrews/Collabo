@@ -14,6 +14,7 @@ import {
   startAppContainer,
   stopAppContainer,
   waitForApp,
+  writeAppFiles,
 } from "./app-containers";
 
 import express from "express";
@@ -400,6 +401,22 @@ const createSocketServer = (server: any) => {
     });
 
     // --- Streamed desktop app (per-room container) ---
+    socket.on("app_files", (files: { name: string; content: string }[]) => {
+      const roomId = getRoomId();
+      if (!rooms.has(roomId) || !Array.isArray(files)) return;
+      try {
+        writeAppFiles(
+          roomId,
+          files.slice(0, 20).map((f) => ({
+            name: String(f?.name || "file.txt").slice(0, 100),
+            content: String(f?.content ?? ""),
+          }))
+        );
+      } catch (err) {
+        console.error("[apps] failed to write shared files", err);
+      }
+    });
+
     socket.on("start_app", (appKey: string) => {
       const roomId = getRoomId();
       const room = rooms.get(roomId);
