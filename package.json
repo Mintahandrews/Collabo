@@ -14,7 +14,9 @@
     "start": "NODE_ENV=production node -r dotenv/config build/index.js",
     "start:render": "cd /opt/render/project/src && NODE_ENV=production node -r dotenv/config build/index.js",
     "start:debug": "NODE_ENV=production DEBUG=* node -r dotenv/config build/index.js",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "ts-node --transpile-only -r tsconfig-paths/register scripts/test-dxf.ts && ts-node --transpile-only -r tsconfig-paths/register scripts/test-ifc.ts",
+    "test:smoke": "node scripts/smoke-elements.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^9.122.0",
