@@ -44,6 +44,8 @@ export const roomContext = createContext<{
 const RoomContextProvider = ({ children }: { children: ReactChild }) => {
   const setRoom = useSetRoom();
   const { users } = useRoom();
+  const usersRef = useRef(users);
+  usersRef.current = users;
   const { handleAddUser, handleRemoveUser } = useSetUsers();
   const { setElements, applyOp } = useSetElements();
 
@@ -136,7 +138,9 @@ const RoomContextProvider = ({ children }: { children: ReactChild }) => {
     });
 
     socket.on("user_disconnected", (userId: string) => {
-      toast(`${users.get(userId)?.name || "Anonymous"} has left the room.`, {
+      toast(
+        `${usersRef.current.get(userId)?.name || "Anonymous"} has left the room.`,
+        {
         position: "top-center",
         theme: "colored",
       });

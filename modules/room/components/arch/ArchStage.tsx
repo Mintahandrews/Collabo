@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
@@ -314,6 +314,28 @@ const ArchStage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallDraft, selectedId, emitElementOp, setSelectedId]);
 
+  const elementNodes = useMemo(
+    () =>
+      elements.order.map((id) => {
+        const element = elements.byId[id];
+        if (!element) return null;
+        return (
+          <ElementShape
+            key={id}
+            element={element}
+            elements={elements}
+            selectedId={selectedId}
+            selectable={selectable}
+            onSelect={setSelectedId}
+            onMoveElement={handleMoveElement}
+            onUpdateElement={handleUpdateElement}
+          />
+        );
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [elements, selectedId, selectable]
+  );
+
   const wallPreview =
     tool === "wall" && wallDraft && hover
       ? [...wallDraft, hover]
@@ -373,22 +395,8 @@ const ArchStage = () => {
         <Layer>
           {grid && <GridLines />}
 
-          {elements.order.map((id) => {
-            const element = elements.byId[id];
-            if (!element) return null;
-            return (
-              <ElementShape
-                key={id}
-                element={element}
-                elements={elements}
-                selectedId={selectedId}
-                selectable={selectable}
-                onSelect={setSelectedId}
-                onMoveElement={handleMoveElement}
-                onUpdateElement={handleUpdateElement}
-              />
-            );
-          })}
+          {/* Memoized so mouse-move hover state doesn't re-render every element */}
+          {elementNodes}
 
           {/* wall draft preview */}
           {wallPreview && wallPreview.length >= 2 && (
