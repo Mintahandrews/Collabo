@@ -43,11 +43,16 @@ const Home = () => {
   const [roomId, setRoomId] = useState("");
   const [username, setUsername] = useState("");
   const [roomKind, setRoomKind] = useState<RoomKind>("whiteboard");
+  const [streaming, setStreaming] = useState(false);
 
   const router = useRouter();
 
   useEffect(() => {
     document.body.style.backgroundColor = "white";
+    fetch("/api/features")
+      .then((r) => r.json())
+      .then((d) => setStreaming(!!d.appStreaming))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -134,7 +139,7 @@ const Home = () => {
           New room type
         </label>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" role="radiogroup">
-          {ROOM_TYPES.map(({ kind, label, desc, icon }) => {
+          {ROOM_TYPES.filter(({ kind }) => kind !== "app" || streaming).map(({ kind, label, desc, icon }) => {
             const selected = roomKind === kind;
             return (
               <button
