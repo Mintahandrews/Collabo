@@ -1,0 +1,32 @@
+# Collabo self-hosted — app + room streaming on any Docker host
+# Usage:
+#   docker compose up -d            # app on :3000, rooms can spawn app containers
+#   docker compose logs -f app
+#
+# Works on: Oracle Always Free ARM VM, any VPS, or your Mac (Docker Desktop).
+# The app container mounts the docker socket so it can spawn per-room
+# linuxserver/freecad|blender containers as siblings on the host.
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DATA_DIR: /data/rooms
+      PORT: 3000
+    volumes:
+      - collabo-data:/data
+      # Docker socket → per-room FreeCAD/Blender containers spawn on the HOST
+      - /var/run/docker.sock:/var/run/docker.sock
+      # docker CLI inside the app container talks to the host daemon
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  collabo-data:
