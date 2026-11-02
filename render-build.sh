@@ -12,7 +12,7 @@ rm -rf .next
 # Install dependencies including dev deps regardless of NODE_ENV
 echo "Installing dependencies (including dev deps)..."
 export NPM_CONFIG_PRODUCTION=false
-npm ci
+npm install
 
 # Run the centralized patch script (stubs any missing caniuse-lite features)
 echo "Running caniuse-lite patch script..."
