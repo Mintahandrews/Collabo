@@ -26,4 +26,4 @@ COPY --from=build /app/public ./public
 COPY package.json next.config.js tsconfig.server.json ./
 
 EXPOSE 3000
-CMD ["node", "build/index.js"]
+CMD ["node", "build/server/index.js"]
